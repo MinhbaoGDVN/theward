@@ -3,13 +3,16 @@
 	"id": "the-ward",
 	"version": "${version}",
 	"name": "The Ward",
-	"description": "This is an example description! Tell everyone what your mod is about!",
+	"description": "The mod",
 	"authors": [
-		"Me!"
+		"MinhbaoGDVN",
+		"k9os02",
+		"EzimerMC",
+		"Khangyyy1"
 	],
 	"contact": {
-		"homepage": "https://fabricmc.net/",
-		"sources": "https://github.com/FabricMC/fabric-example-mod"
+		"homepage": "https://theward.vercel.app",
+		"sources": "https://github.com/MinhbaoGDVN/theward"
 	},
 	"license": "CC0-1.0",
 	"icon": "assets/the-ward/icon.png",
