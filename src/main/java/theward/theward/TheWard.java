@@ -2,11 +2,17 @@ package theward.theward;
 
 import net.fabricmc.api.ModInitializer;
 
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerChunkEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerEntityEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.block.Block;
+import net.minecraft.block.Blocks;
+import net.minecraft.entity.Entity;
+import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.nbt.NbtCompound;
 import net.minecraft.network.packet.s2c.play.PositionFlag;
+import net.minecraft.registry.Registries;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.server.MinecraftServer;
@@ -21,10 +27,12 @@ import net.minecraft.world.Heightmap;
 import net.minecraft.world.PersistentState;
 import net.minecraft.world.World;
 import net.minecraft.world.chunk.ChunkStatus;
+import net.minecraft.world.chunk.WorldChunk;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.HashSet;
 import java.util.Optional;
 import java.util.Set;
 
@@ -35,6 +43,10 @@ public class TheWard implements ModInitializer {
             RegistryKey.of(RegistryKeys.WORLD, new Identifier("theward", "ward"));
     private static final Identifier BASE_TEMPLATE_ID = new Identifier("theward", "cancuchinh");
     private static final String INITIAL_SPAWN_TAG = "theward.initial_spawn";
+    private static final Set<Block> SOIL_BLOCKS = Set.of(
+            Blocks.DIRT, Blocks.COARSE_DIRT, Blocks.GRASS_BLOCK, Blocks.PODZOL,
+            Blocks.MYCELIUM, Blocks.ROOTED_DIRT, Blocks.DIRT_PATH
+    );
 
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
@@ -43,10 +55,49 @@ public class TheWard implements ModInitializer {
         ServerLifecycleEvents.SERVER_STARTED.register(TheWard::placeMainBase);
         ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
                 sendNewPlayerToWard(handler.player, server));
+        ServerChunkEvents.CHUNK_LOAD.register(TheWard::cleanWardChunk);
+        ServerEntityEvents.ENTITY_LOAD.register(TheWard::removeVanillaMobs);
     }
 
     public static Identifier id(String path) {
         return new Identifier(MOD_ID, path);
+    }
+
+    private static void cleanWardChunk(ServerWorld world, WorldChunk chunk) {
+        if (!world.getRegistryKey().equals(WARD_WORLD)) {
+            return;
+        }
+
+        WardChunkState state = world.getServer().getOverworld().getPersistentStateManager()
+                .getOrCreate(WardChunkState::fromNbt, WardChunkState::new, "theward_cleaned_chunks");
+        if (!state.cleanedChunks.add(chunk.getPos().toLong())) {
+            return;
+        }
+
+        for (int localX = 0; localX < 16; localX++) {
+            for (int localZ = 0; localZ < 16; localZ++) {
+                int x = chunk.getPos().getStartX() + localX;
+                int z = chunk.getPos().getStartZ() + localZ;
+                int surfaceY = world.getTopY(Heightmap.Type.WORLD_SURFACE, x, z);
+                for (int y = Math.max(world.getBottomY(), surfaceY - 8);
+                     y < Math.min(world.getTopY(), surfaceY);
+                     y++) {
+                    BlockPos pos = new BlockPos(x, y, z);
+                    if (SOIL_BLOCKS.contains(chunk.getBlockState(pos).getBlock())) {
+                        chunk.setBlockState(pos, Blocks.END_STONE.getDefaultState(), false);
+                    }
+                }
+            }
+        }
+        state.markDirty();
+    }
+
+    private static void removeVanillaMobs(Entity entity, ServerWorld world) {
+        if (world.getRegistryKey().equals(WARD_WORLD)
+                && entity instanceof MobEntity
+                && Registries.ENTITY_TYPE.getId(entity.getType()).getNamespace().equals("minecraft")) {
+            entity.discard();
+        }
     }
 
     private static void placeMainBase(MinecraftServer server) {
@@ -137,6 +188,24 @@ public class TheWard implements ModInitializer {
         @Override
         public NbtCompound writeNbt(NbtCompound nbt) {
             nbt.putBoolean("placed", placed);
+            return nbt;
+        }
+    }
+
+    private static final class WardChunkState extends PersistentState {
+        private final Set<Long> cleanedChunks = new HashSet<>();
+
+        private static WardChunkState fromNbt(NbtCompound nbt) {
+            WardChunkState state = new WardChunkState();
+            for (long chunk : nbt.getLongArray("cleaned_chunks")) {
+                state.cleanedChunks.add(chunk);
+            }
+            return state;
+        }
+
+        @Override
+        public NbtCompound writeNbt(NbtCompound nbt) {
+            nbt.putLongArray("cleaned_chunks", cleanedChunks.stream().mapToLong(Long::longValue).toArray());
             return nbt;
         }
     }
