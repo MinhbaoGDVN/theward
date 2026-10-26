@@ -1,11 +1,22 @@
 {
   "type": "theward:ward",
   "generator": {
-    "type": "minecraft:noise",
-    "settings": "minecraft:end",
-    "biome_source": {
-      "type": "minecraft:fixed",
-      "biome": "minecraft:the_end"
+    "type": "minecraft:flat",
+    "settings": {
+      "biome": "theward:ward",
+      "features": false,
+      "lakes": false,
+      "layers": [
+        {
+          "block": "minecraft:bedrock",
+          "height": 1
+        },
+        {
+          "block": "minecraft:end_stone",
+          "height": 63
+        }
+      ],
+      "structure_overrides": []
     }
   }
 }

@@ -1,9 +1,9 @@
 # The Ward
 
-## Setup
+## WARD dimension
 
-For setup instructions, please see the [Fabric Documentation page](https://docs.fabricmc.net/develop/getting-started/creating-a-project#setting-up) related to the IDE that you are using.
+WARD is a custom dimension with a solid End Stone surface, its own sky colors, and no
+natural mob spawns. New players spawn beside the main base and respawn in WARD.
 
-## License
-
-This template is available under the CC0 license. Feel free to learn from it and incorporate it in your own projects.
+The main base structure is placed once per world at X=0, Z=0 in WARD and remains there
+across server restarts.

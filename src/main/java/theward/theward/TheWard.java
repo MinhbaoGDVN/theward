@@ -3,11 +3,14 @@ package theward.theward;
 import net.fabricmc.api.ModInitializer;
 
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLifecycleEvents;
+import net.fabricmc.fabric.api.networking.v1.ServerPlayConnectionEvents;
 import net.minecraft.block.Block;
 import net.minecraft.nbt.NbtCompound;
+import net.minecraft.network.packet.s2c.play.PositionFlag;
 import net.minecraft.registry.RegistryKey;
 import net.minecraft.registry.RegistryKeys;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.structure.StructurePlacementData;
 import net.minecraft.structure.StructureTemplate;
@@ -17,11 +20,13 @@ import net.minecraft.util.math.random.Random;
 import net.minecraft.world.Heightmap;
 import net.minecraft.world.PersistentState;
 import net.minecraft.world.World;
+import net.minecraft.world.chunk.ChunkStatus;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Optional;
+import java.util.Set;
 
 public class TheWard implements ModInitializer {
 
@@ -29,12 +34,15 @@ public class TheWard implements ModInitializer {
     private static final RegistryKey<World> WARD_WORLD =
             RegistryKey.of(RegistryKeys.WORLD, new Identifier("theward", "ward"));
     private static final Identifier BASE_TEMPLATE_ID = new Identifier("theward", "cancuchinh");
+    private static final String INITIAL_SPAWN_TAG = "theward.initial_spawn";
 
     public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
 
     @Override
     public void onInitialize() {
         ServerLifecycleEvents.SERVER_STARTED.register(TheWard::placeMainBase);
+        ServerPlayConnectionEvents.JOIN.register((handler, sender, server) ->
+                sendNewPlayerToWard(handler.player, server));
     }
 
     public static Identifier id(String path) {
@@ -60,6 +68,16 @@ public class TheWard implements ModInitializer {
         }
 
         StructureTemplate base = template.get();
+        int minChunkX = -base.getSize().getX() / 2 >> 4;
+        int minChunkZ = -base.getSize().getZ() / 2 >> 4;
+        int maxChunkX = (-base.getSize().getX() / 2 + base.getSize().getX() - 1) >> 4;
+        int maxChunkZ = (-base.getSize().getZ() / 2 + base.getSize().getZ() - 1) >> 4;
+        for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+            for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
+                ward.getChunkManager().getChunk(chunkX, chunkZ, ChunkStatus.FULL, true);
+            }
+        }
+
         int y = ward.getTopY(Heightmap.Type.WORLD_SURFACE, 0, 0);
         BlockPos origin = new BlockPos(-base.getSize().getX() / 2, y, -base.getSize().getZ() / 2);
         boolean placed = base.place(ward, origin, origin, new StructurePlacementData(),
@@ -71,6 +89,40 @@ public class TheWard implements ModInitializer {
         state.placed = true;
         state.markDirty();
         LOGGER.info("Placed the WARD main base at X=0, Z=0.");
+    }
+
+    private static void sendNewPlayerToWard(ServerPlayerEntity player, MinecraftServer server) {
+        if (player.getCommandTags().contains(INITIAL_SPAWN_TAG)) {
+            return;
+        }
+
+        ServerWorld ward = server.getWorld(WARD_WORLD);
+        if (ward == null) {
+            LOGGER.error("WARD dimension is missing; cannot spawn player {} there.", player.getName().getString());
+            return;
+        }
+
+        Optional<StructureTemplate> template = server.getStructureTemplateManager().getTemplate(BASE_TEMPLATE_ID);
+        if (template.isEmpty()) {
+            LOGGER.error("Missing main base structure template: {}", BASE_TEMPLATE_ID);
+            return;
+        }
+
+        int spawnX = 0;
+        int spawnZ = template.get().getSize().getZ() / 2 + 2;
+        ward.getChunkManager().getChunk(spawnX >> 4, spawnZ >> 4, ChunkStatus.FULL, true);
+        int spawnY = ward.getTopY(Heightmap.Type.WORLD_SURFACE, spawnX, spawnZ) + 1;
+
+        if (!player.teleport(ward, spawnX + 0.5, spawnY, spawnZ + 0.5,
+                Set.<PositionFlag>of(), player.getYaw(), player.getPitch())) {
+            LOGGER.error("Could not teleport player {} to the WARD main base.", player.getName().getString());
+            return;
+        }
+
+        BlockPos spawnPos = new BlockPos(spawnX, spawnY, spawnZ);
+        player.setSpawnPoint(WARD_WORLD, spawnPos, player.getYaw(), true, false);
+        player.addCommandTag(INITIAL_SPAWN_TAG);
+        LOGGER.info("Spawned player {} in WARD beside the main base.", player.getName().getString());
     }
 
     private static final class MainBaseState extends PersistentState {
